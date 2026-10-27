@@ -50,18 +50,74 @@ How the values are produced, and what they can and cannot establish:
   Measured in the lab (3 groups / 33 projects / 14 users): 35 / 38 / 29 requests. There is **no retry or back-off**:
   a `429` surfaces as a connector error and the reconciliation reports it.
 
-## Quick start with midPoint
+## How to build and use
 
-1. Build (`mvn -B clean verify`, JDK 17+) or take the release jar; copy
-   `connector-gitlab-rest-2.3.0-easyiga-connector.jar` into midPoint's `connid-connectors/` and restart, or run the
-   Docker installer image against your midPoint home volume (see Build).
-2. In GitLab, create a dedicated instance-administrator user (default name `easyiga-midpoint`) and a personal access
-   token on it named `easyiga-midpoint-connector`, scope `api`, expiry no more than 30 days ahead. The connector
-   refuses `root`, any other identity, a different token name, and longer remaining validity.
-3. Import [`examples/midpoint/resource-gitlab-example.xml`](examples/midpoint/resource-gitlab-example.xml) after
-   replacing its four placeholders; test the connection; import groups and projects (read-only entitlements).
-4. Read a group or project shadow through the resource: the `*_last_event` pairs and the coverage attributes are
-   there. For certification columns or reports, see the caching note in the example resource.
+### 1. Build the connector bundle
+
+Requirements: JDK 17 or newer and Maven 3.9 (or Docker — see below).
+
+```sh
+git clone https://github.com/We-Know-Identity/midpoint-gitlab-connector.git
+cd midpoint-gitlab-connector
+mvn -B clean verify
+```
+
+`verify` compiles, runs the 85 automated tests (unit tests plus a bundle-load integration test against the ConnId
+framework) and produces the installable bundle:
+
+```text
+target/connector-gitlab-rest-2.3.0-easyiga-connector.jar
+```
+
+Without a local JDK, the Docker build runs the same tests and wraps the bundle in a minimal installer image:
+
+```sh
+docker build -t midpoint-gitlab-connector:2.3.0 .
+```
+
+### 2. Install it into midPoint
+
+Copy the jar into midPoint's `connid-connectors/` directory (inside the midPoint home) and restart midPoint; the
+connector appears under *Repository objects → Connectors* as bundle `com.evolveum.polygon.connector-gitlab-rest`,
+version `2.3.0-easyiga`.
+
+With the Docker image, mount the midPoint home volume at `/midpoint-home` and run the installer once before
+starting midPoint:
+
+```sh
+docker run --rm -v midpoint_home:/midpoint-home midpoint-gitlab-connector:2.3.0
+```
+
+The installer is checksum-idempotent: it installs `connid-connectors/connector-gitlab-rest-2.3.0-easyiga.jar` and
+removes only older files matching `connector-gitlab-rest-*-easyiga.jar`. The bundle carries `META-INF/LICENSE` and
+`META-INF/NOTICE`.
+
+### 3. Prepare GitLab
+
+Create a dedicated **instance-administrator** user for the connector (default name `easyiga-midpoint`; any other
+name works if you set `integrationUsername`). On that user create a personal access token named
+`easyiga-midpoint-connector` (or your `integrationTokenName`), scope `api`, expiry **no more than 30 days ahead**.
+Test Connection refuses `root`, any other identity, a different token name, a missing `api` scope, and a token with
+more than 30 days of remaining validity — so plan on rotating the token monthly.
+
+### 4. Create the midPoint resource
+
+Take [`examples/midpoint/resource-gitlab-example.xml`](examples/midpoint/resource-gitlab-example.xml), replace its
+four placeholders (`%GITLAB_URL%`, `%GITLAB_MIDPOINT_TOKEN%`, `%MANAGED_GROUP_FULL_PATH%`,
+`%MANAGED_PROJECT_PATH%`), import it, and run *Test connection*. The example manages user accounts and the two
+direct memberships (group Developer, project Maintainer) and treats groups and projects as read-only entitlements;
+the connector refuses to create, delete or rename them regardless of configuration.
+
+### 5. Read the activity signals
+
+Import or reconcile groups and projects, then open a group or project shadow **read through the resource** (not from
+the repository cache): the `*_last_event` pairs and the coverage attributes (`*_lookback_days`,
+`developer_members_last_event_projects_scanned`, `developer_members_last_event_projects_truncated`) are on it.
+
+To use the values in a certification column, a report or an easyIGA-style finding, midPoint has to hold them in the
+repository: enable attribute caching for these attributes or persist them through an inbound mapping, and keep the
+retrieval timestamp and a collection-failure indication next to the value. The example resource carries a commented
+caching block; that part was not exercised in the article lab, so verify it against your midPoint version.
 
 ## Compatibility and scope
 
@@ -70,37 +126,6 @@ How the values are produced, and what they can and cannot establish:
   several endpoints the connector relies on are administrator-only on GitLab's side. Adapting it means reviewing each
   endpoint against the permissions a GitLab.com token can hold, not just the connector's token check.
 - Live synchronization is not implemented. Groups and projects are read-only topology.
-
-## Build
-
-```sh
-mvn -B clean verify
-```
-
-The installable ConnId bundle is:
-
-```text
-target/connector-gitlab-rest-2.3.0-easyiga-connector.jar
-```
-
-The Docker build runs the same tests and places that bundle in a minimal
-installer image:
-
-```sh
-docker build -t easyiga-gitlab-connector:local .
-```
-
-The installer expects the midPoint home volume at `/midpoint-home` and installs
-the bundle as:
-
-```text
-/midpoint-home/connid-connectors/connector-gitlab-rest-2.3.0-easyiga.jar
-```
-
-Installation is checksum-idempotent and removes only older files matching
-`connector-gitlab-rest-*-easyiga.jar`, including when the current bundle was
-already installed. The assembled bundle carries `META-INF/LICENSE` and
-`META-INF/NOTICE`.
 
 ## ConnId identity
 
