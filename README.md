@@ -18,7 +18,7 @@ in the data how much of that scope was actually covered.
 
 | Object class | Attribute | Type | Meaning |
 |---|---|---|---|
-| `__GROUP__` | `developer_members_last_event` | multi-valued string, read-only | one `"<GitLab user id>|<ISO-8601 instant>"` pair per direct **Developer** who authored at least one event, inside the window, on one of the scanned projects. A Developer with no such event is **absent** — nothing is fabricated. |
+| `__GROUP__` | `developer_members_last_event` | multi-valued string, read-only | one `"<GitLab user id>\|<ISO-8601 instant>"` pair per direct **Developer** who authored at least one event, inside the window, on one of the scanned projects. A Developer with no such event is **absent** — nothing is fabricated. |
 | `__GROUP__` | `developer_members_last_event_lookback_days` | integer | the window used (`eventLookbackDays`, default 90) |
 | `__GROUP__` | `developer_members_last_event_projects_scanned` | integer | how many of the group's projects were actually read |
 | `__GROUP__` | `developer_members_last_event_projects_truncated` | boolean | `true` when GitLab listed more projects than `maxProjectsPerGroup`; the scan is then explicitly partial |
