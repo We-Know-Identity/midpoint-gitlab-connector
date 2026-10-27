@@ -1,0 +1,427 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Example midPoint 4.8 resource for the GitLab connector (activity-signal build 2.3.0-easyiga).
+
+  Replace before import:
+    %GITLAB_URL%                      full GitLab URL, e.g. https://gitlab.example.com
+    %GITLAB_MIDPOINT_TOKEN%           PAT of the dedicated instance-administrator identity
+                                      (name must equal integrationTokenName; expiry <= 30 days ahead)
+    %MANAGED_GROUP_FULL_PATH%         exact full path of the group whose direct Developer membership this
+                                      resource manages (also the allow-list for membership mutation)
+    %MANAGED_PROJECT_PATH%            exact path_with_namespace of the project whose direct Maintainer
+                                      membership this resource manages
+
+  The connectorRef below resolves the connector by bundle, version and class, so no connector OID is needed.
+  This file manages user accounts and the two direct memberships only; groups and projects are read-only.
+-->
+<resource oid="8f7e2b4c-3a1d-4c6e-9b2f-5d0a7e1c2b33"
+          xmlns="http://midpoint.evolveum.com/xml/ns/public/common/common-3"
+          xmlns:t="http://prism.evolveum.com/xml/ns/public/types-3"
+          xmlns:q="http://prism.evolveum.com/xml/ns/public/query-3"
+          xmlns:cap="http://midpoint.evolveum.com/xml/ns/public/resource/capabilities-3"
+          xmlns:icfs="http://midpoint.evolveum.com/xml/ns/public/connector/icf-1/resource-schema-3"
+          xmlns:icfc="http://midpoint.evolveum.com/xml/ns/public/connector/icf-1/connector-schema-3"
+          xmlns:ri="http://midpoint.evolveum.com/xml/ns/public/resource/instance-3">
+
+    <name>GitLab</name>
+    <description>
+        GitLab target with per-entitlement activity signals. Manages account lifecycle and direct
+        Developer/Maintainer memberships only; group and project topology stays read-only.
+    </description>
+
+    <connectorRef type="ConnectorType">
+        <filter>
+            <q:text>
+                connectorType = "com.evolveum.polygon.connector.gitlab.rest.GitlabRestConnector"
+                and connectorVersion = "2.3.0-easyiga"
+            </q:text>
+        </filter>
+    </connectorRef>
+
+    <connectorConfiguration>
+        <icfc:configurationProperties
+                xmlns:gitlab="http://midpoint.evolveum.com/xml/ns/public/connector/icf-1/bundle/com.evolveum.polygon.connector-gitlab-rest/com.evolveum.polygon.connector.gitlab.rest.GitlabRestConnector">
+            <gitlab:baseUrl>%GITLAB_URL%</gitlab:baseUrl>
+            <gitlab:privateToken>
+                <t:clearValue>%GITLAB_MIDPOINT_TOKEN%</t:clearValue>
+            </gitlab:privateToken>
+            <gitlab:connectTimeoutMillis>10000</gitlab:connectTimeoutMillis>
+            <gitlab:requestTimeoutMillis>30000</gitlab:requestTimeoutMillis>
+            <!-- Defense in depth: the connector rejects these operations as well. -->
+            <gitlab:allowAccountDelete>false</gitlab:allowAccountDelete>
+            <gitlab:allowTopologyMutations>false</gitlab:allowTopologyMutations>
+            <!-- No focus password or committed demo default is required on account create. -->
+            <gitlab:forceRandomPasswordOnCreate>true</gitlab:forceRandomPasswordOnCreate>
+            <!--
+              Account disable removes only direct memberships whose GitLab member row proves creation
+              by the integration administrator. These exact paths bound that provenance-gated cleanup
+              and form the allow-list for every membership mutation.
+            -->
+            <gitlab:deprovisionDeveloperGroupPath>%MANAGED_GROUP_FULL_PATH%</gitlab:deprovisionDeveloperGroupPath>
+            <gitlab:deprovisionMaintainerProjectPath>%MANAGED_PROJECT_PATH%</gitlab:deprovisionMaintainerProjectPath>
+            <!-- Activity-signal window and group bound (defaults shown). -->
+            <gitlab:eventLookbackDays>90</gitlab:eventLookbackDays>
+            <gitlab:maxProjectsPerGroup>20</gitlab:maxProjectsPerGroup>
+            <!-- Dedicated integration identity (defaults shown; change both if your service account differs). -->
+            <gitlab:integrationUsername>easyiga-midpoint</gitlab:integrationUsername>
+            <gitlab:integrationTokenName>easyiga-midpoint-connector</gitlab:integrationTokenName>
+        </icfc:configurationProperties>
+        <icfc:resultsHandlerConfiguration>
+            <icfc:enableNormalizingResultsHandler>false</icfc:enableNormalizingResultsHandler>
+            <icfc:enableFilteredResultsHandler>false</icfc:enableFilteredResultsHandler>
+            <icfc:filteredResultsHandlerInValidationMode>true</icfc:filteredResultsHandlerInValidationMode>
+            <icfc:enableAttributesToGetSearchResultsHandler>false</icfc:enableAttributesToGetSearchResultsHandler>
+        </icfc:resultsHandlerConfiguration>
+    </connectorConfiguration>
+
+    <schemaHandling>
+        <objectType>
+            <kind>account</kind>
+            <intent>default</intent>
+            <displayName>GitLab user account</displayName>
+            <default>true</default>
+            <objectClass>ri:AccountObjectClass</objectClass>
+
+            <!--
+              The three inbounds are marked use=correlation: evaluated only when midPoint looks for an
+              owner, never writing GitLab values back onto the user. Note the connector's naming:
+              icfs:name is the GitLab username, ri:name is the display name.
+            -->
+            <attribute>
+                <ref>icfs:name</ref>
+                <displayName>GitLab username</displayName>
+                <inbound>
+                    <target><path>name</path></target>
+                    <use>correlation</use>
+                </inbound>
+                <outbound>
+                    <strength>strong</strength>
+                    <source><path>name</path></source>
+                </outbound>
+            </attribute>
+            <attribute>
+                <ref>ri:name</ref>
+                <displayName>GitLab display name</displayName>
+                <inbound>
+                    <target><path>fullName</path></target>
+                    <use>correlation</use>
+                </inbound>
+                <outbound>
+                    <strength>strong</strength>
+                    <source><path>fullName</path></source>
+                </outbound>
+            </attribute>
+            <attribute>
+                <ref>ri:email</ref>
+                <displayName>GitLab email</displayName>
+                <inbound>
+                    <target><path>emailAddress</path></target>
+                    <use>correlation</use>
+                </inbound>
+                <outbound>
+                    <strength>strong</strength>
+                    <source><path>emailAddress</path></source>
+                </outbound>
+            </attribute>
+
+            <!-- GitLab stores memberships on the group/project object as user IDs. -->
+            <association>
+                <ref>ri:gitlabGroupDeveloper</ref>
+                <displayName>Direct GitLab group Developer</displayName>
+                <tolerant>true</tolerant>
+                <exclusiveStrong>false</exclusiveStrong>
+                <kind>entitlement</kind>
+                <intent>group</intent>
+                <direction>objectToSubject</direction>
+                <associationAttribute>ri:developer_members</associationAttribute>
+                <valueAttribute>icfs:uid</valueAttribute>
+                <explicitReferentialIntegrity>false</explicitReferentialIntegrity>
+            </association>
+            <association>
+                <ref>ri:gitlabProjectMaintainer</ref>
+                <displayName>Direct GitLab project Maintainer</displayName>
+                <tolerant>true</tolerant>
+                <exclusiveStrong>false</exclusiveStrong>
+                <kind>entitlement</kind>
+                <intent>project</intent>
+                <direction>objectToSubject</direction>
+                <!-- GitLab access level 40; connector keeps its historical attribute name. -->
+                <associationAttribute>ri:master_members</associationAttribute>
+                <valueAttribute>icfs:uid</valueAttribute>
+                <explicitReferentialIntegrity>false</explicitReferentialIntegrity>
+            </association>
+
+            <protected>
+                <filter>
+                    <q:text>attributes/icfs:name =[stringIgnoreCase] "root"</q:text>
+                </filter>
+            </protected>
+            <protected>
+                <filter>
+                    <!-- keep in step with integrationUsername -->
+                    <q:text>attributes/icfs:name =[stringIgnoreCase] "easyiga-midpoint"</q:text>
+                </filter>
+            </protected>
+
+            <activation>
+                <administrativeStatus>
+                    <outbound>
+                        <strength>strong</strength>
+                        <expression><asIs/></expression>
+                    </outbound>
+                </administrativeStatus>
+                <!-- Removing the future construction blocks the account instead of deleting it. -->
+                <disableInsteadOfDelete/>
+            </activation>
+
+            <configuredCapabilities>
+                <cap:delete>
+                    <cap:enabled>false</cap:enabled>
+                </cap:delete>
+            </configuredCapabilities>
+
+            <!--
+              Correlation: tier 1 = exact username (certain); tier 2 = display name exact + e-mail fuzzy,
+              weighted 0.6 so it can only propose candidates for a human, never link on its own.
+              midPoint 4.10+ ships smart correlation natively; this is the 4.8 form.
+            -->
+            <correlation>
+                <correlators>
+                    <items>
+                        <name>username-exact</name>
+                        <composition>
+                            <tier>1</tier>
+                            <weight>1.0</weight>
+                        </composition>
+                        <item>
+                            <ref>name</ref>
+                        </item>
+                    </items>
+                    <items>
+                        <name>name-and-mail-fuzzy</name>
+                        <composition>
+                            <tier>2</tier>
+                            <weight>0.6</weight>
+                        </composition>
+                        <item>
+                            <ref>fullName</ref>
+                        </item>
+                        <item>
+                            <ref>emailAddress</ref>
+                            <search>
+                                <fuzzy>
+                                    <levenshtein>
+                                        <threshold>2</threshold>
+                                    </levenshtein>
+                                </fuzzy>
+                            </search>
+                        </item>
+                    </items>
+                </correlators>
+                <thresholds>
+                    <definite>1.0</definite>
+                    <candidate>0.0</candidate>
+                </thresholds>
+            </correlation>
+
+            <!--
+              Reactions: unlinked -> link; unmatched -> recorded, no action (an unowned account is a finding,
+              not something to act on blindly); disputed -> correlation case. No synchronize on linked:
+              a reconciliation would rewrite the two membership associations.
+            -->
+            <synchronization>
+                <reaction>
+                    <situation>unlinked</situation>
+                    <actions>
+                        <link/>
+                    </actions>
+                </reaction>
+                <reaction>
+                    <situation>unmatched</situation>
+                    <!-- No actions on purpose; the situation is still recorded. -->
+                </reaction>
+                <reaction>
+                    <situation>disputed</situation>
+                    <actions>
+                        <createCorrelationCase/>
+                    </actions>
+                </reaction>
+            </synchronization>
+        </objectType>
+
+        <objectType>
+            <kind>entitlement</kind>
+            <intent>group</intent>
+            <displayName>Existing GitLab group</displayName>
+            <default>false</default>
+            <objectClass>ri:GroupObjectClass</objectClass>
+
+            <attribute>
+                <ref>icfs:name</ref>
+                <limitations>
+                    <access>
+                        <add>false</add>
+                        <read>true</read>
+                        <modify>false</modify>
+                    </access>
+                </limitations>
+            </attribute>
+            <attribute>
+                <ref>ri:full_path</ref>
+                <displayName>GitLab group full path</displayName>
+                <limitations>
+                    <access>
+                        <add>false</add>
+                        <read>true</read>
+                        <modify>false</modify>
+                    </access>
+                </limitations>
+                <secondaryIdentifier>true</secondaryIdentifier>
+            </attribute>
+            <!--
+              Activity signal: read-only, multivalued "<userId>|<ISO-8601 instant>" pairs — one per direct
+              Developer with a recorded event, inside the window, on one of the scanned projects (GitLab's
+              default listing: shared projects in, subgroups out; at most maxProjectsPerGroup scanned).
+              A Developer with no such event is absent: "none found in what was scanned", not inactivity.
+              Read it with the coverage attributes that follow.
+            -->
+            <attribute>
+                <ref>ri:developer_members_last_event</ref>
+                <displayName>GitLab Developer last event (per member)</displayName>
+                <limitations>
+                    <access>
+                        <add>false</add>
+                        <read>true</read>
+                        <modify>false</modify>
+                    </access>
+                </limitations>
+            </attribute>
+            <attribute>
+                <ref>ri:developer_members_last_event_lookback_days</ref>
+                <displayName>Activity window (days)</displayName>
+                <limitations><access><add>false</add><read>true</read><modify>false</modify></access></limitations>
+            </attribute>
+            <attribute>
+                <ref>ri:developer_members_last_event_projects_scanned</ref>
+                <displayName>Projects scanned for the activity signal</displayName>
+                <limitations><access><add>false</add><read>true</read><modify>false</modify></access></limitations>
+            </attribute>
+            <attribute>
+                <ref>ri:developer_members_last_event_projects_truncated</ref>
+                <displayName>Activity scan truncated by maxProjectsPerGroup</displayName>
+                <limitations><access><add>false</add><read>true</read><modify>false</modify></access></limitations>
+            </attribute>
+
+            <!-- Updates stay enabled solely for the developer_members association. -->
+            <configuredCapabilities>
+                <cap:create>
+                    <cap:enabled>false</cap:enabled>
+                </cap:create>
+                <cap:update>
+                    <cap:enabled>true</cap:enabled>
+                    <cap:delta>true</cap:delta>
+                    <cap:addRemoveAttributeValues>true</cap:addRemoveAttributeValues>
+                </cap:update>
+                <cap:delete>
+                    <cap:enabled>false</cap:enabled>
+                </cap:delete>
+            </configuredCapabilities>
+        </objectType>
+
+        <objectType>
+            <kind>entitlement</kind>
+            <intent>project</intent>
+            <displayName>Existing GitLab project</displayName>
+            <default>false</default>
+            <objectClass>ri:CustomProjectObjectClass</objectClass>
+
+            <attribute>
+                <ref>icfs:name</ref>
+                <limitations>
+                    <access>
+                        <add>false</add>
+                        <read>true</read>
+                        <modify>false</modify>
+                    </access>
+                </limitations>
+            </attribute>
+            <attribute>
+                <ref>ri:path_with_namespace</ref>
+                <displayName>GitLab project path with namespace</displayName>
+                <limitations>
+                    <access>
+                        <add>false</add>
+                        <read>true</read>
+                        <modify>false</modify>
+                    </access>
+                </limitations>
+                <secondaryIdentifier>true</secondaryIdentifier>
+            </attribute>
+            <!--
+              Activity signal: one pair per direct Maintainer with a recorded event, inside the window, on this
+              project. Absent = none found; a membership join is itself an event.
+            -->
+            <attribute>
+                <ref>ri:master_members_last_event</ref>
+                <displayName>GitLab Maintainer last event (per member)</displayName>
+                <limitations>
+                    <access>
+                        <add>false</add>
+                        <read>true</read>
+                        <modify>false</modify>
+                    </access>
+                </limitations>
+            </attribute>
+            <attribute>
+                <ref>ri:master_members_last_event_lookback_days</ref>
+                <displayName>Activity window (days)</displayName>
+                <limitations><access><add>false</add><read>true</read><modify>false</modify></access></limitations>
+            </attribute>
+
+            <!-- Updates stay enabled solely for the master_members association. -->
+            <configuredCapabilities>
+                <cap:create>
+                    <cap:enabled>false</cap:enabled>
+                </cap:create>
+                <cap:update>
+                    <cap:enabled>true</cap:enabled>
+                    <cap:delta>true</cap:delta>
+                    <cap:addRemoveAttributeValues>true</cap:addRemoveAttributeValues>
+                </cap:update>
+                <cap:delete>
+                    <cap:enabled>false</cap:enabled>
+                </cap:delete>
+            </configuredCapabilities>
+        </objectType>
+    </schemaHandling>
+
+    <!--
+      Repository-based views (certification columns, reports) need the activity attributes cached or
+      persisted; by default midPoint 4.8 reads them through the resource only. Enabling attribute caching
+      is one option — NOT exercised in the article lab, verify against your version before relying on it:
+
+      <caching>
+          <cachingStrategy>passive</cachingStrategy>
+      </caching>
+
+      Whatever you choose, keep the retrieval timestamp and a collection-failure indication next to the
+      value; the age of cached data does not say whether a later refresh failed.
+    -->
+
+    <!-- Account hard delete is disabled globally. Connector guards prevent topology CRUD. -->
+    <capabilities>
+        <configured>
+            <cap:liveSync>
+                <cap:enabled>false</cap:enabled>
+            </cap:liveSync>
+            <cap:delete>
+                <cap:enabled>false</cap:enabled>
+            </cap:delete>
+        </configured>
+    </capabilities>
+
+    <consistency>
+        <!-- Avoid redundant membership add/remove calls during recomputation. -->
+        <avoidDuplicateValues>true</avoidDuplicateValues>
+    </consistency>
+</resource>

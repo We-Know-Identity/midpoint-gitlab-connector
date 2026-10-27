@@ -1,0 +1,9 @@
+easyIGA GitLab REST ConnId connector
+Copyright 2026 easyIGA contributors
+
+This product is a derivative of Evolveum connector-gitlab-rest:
+https://github.com/Evolveum/connector-gitlab-rest
+Copyright 2010-2017 Evolveum
+
+The original and modified work are licensed under the Apache License,
+Version 2.0. See LICENSE.
